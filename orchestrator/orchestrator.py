@@ -43,6 +43,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 DB_PATH = Path(os.environ.get("ORCHESTRATOR_DB", "/var/lib/triage/orchestrator.db"))
 SCHEMA_PATH = Path(__file__).parent / "db_schema.sql"
 MAX_PARALLEL_ISSUES = int(os.environ.get("MAX_PARALLEL_ISSUES", "8"))
+VERSION = "0.1.0"
 
 
 # ---------------------------------------------------------------------------

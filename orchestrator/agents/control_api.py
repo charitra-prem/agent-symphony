@@ -102,7 +102,10 @@ def state() -> dict[str, Any]:
             (IssueState.DONE.value,),
         ).fetchone()["n"]
 
+    from orchestrator import VERSION
+
     return {
+        "version": VERSION,
         "config": workflow.status_snapshot(),
         "issues_by_state": issues_by_state,
         "running": running,
