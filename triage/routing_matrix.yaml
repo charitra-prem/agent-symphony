@@ -1,0 +1,261 @@
+# Routing matrix — PM agent recommends one of these.
+#
+# Strategy (locked in by user):
+#   - Claude (Max sub, 1M ctx, high limits) → orchestration + mundane bulk + default coding
+#   - Codex (ChatGPT sub, lower limits, deep reasoning) → REVIEW + verification (smaller scope, higher rigour)
+#   - Kimi K2.6 (flat-rate $20) → low-level edits, scripting, small refactors — saves subscription window
+#   - DeepSeek-v4-pro via PCCI (per-token, encrypted) → low-level edits with sensitive context
+#   - open-code-review (ocr) → diff/PR audits, can use Codex or Claude backend
+#   - visual-qa → browser-driven UI QA, screenshots, recordings, Clerk-aware
+#   - Aider → tight surgical edits paired with Kimi/DeepSeek for token efficiency
+#
+# `cost_tier`: 0 = flat-rate sub (free at margin), 1 = flat-rate plan, 2 = per-token cheap,
+#              3 = per-token premium, 4 = needs human-attended browser session.
+
+harnesses:
+  # ---------- Claude family (orchestration / mundane / default) ----------
+  claude-sonnet:
+    cost_tier: 0
+    plan: "Claude Max subscription"
+    invoke: "claude --model sonnet"
+    best_for: [orchestration, multi_file_coding, feature_work, mundane_bulk, docs, planning, default]
+    context_window: 1000000
+    notes: "Default for medium+ work. Use freely — Max sub plan, high limits, 1M ctx."
+
+  claude-opus-thinking:
+    cost_tier: 0
+    plan: "Claude Max subscription"
+    invoke: "claude --model opus"
+    best_for: [architecture, complex_refactor, hard_debugging, research, multi_file_redesign]
+    context_window: 1000000
+    notes: "Heavy reasoning. Counts harder against Max plan rate-limit window — reserve for hard tasks."
+
+  # ---------- Codex (review / verification specialist) ----------
+  codex-gpt5:
+    cost_tier: 0
+    plan: "ChatGPT Pro subscription"
+    invoke: "codex"
+    best_for: [code_review, pr_review, verification, second_opinion, infra_audit, security_review]
+    context_window: 400000
+    notes: "Lower turn quota — use for *verification-shaped* tasks. Deep on small scope. Different reasoning style for adversarial review."
+
+  # ---------- Code-review specialist (uses codex or claude as backend) ----------
+  ocr-codex:
+    cost_tier: 0
+    plan: "ChatGPT Pro (via env-routed ocr backend)"
+    invoke: "ocr review --backend codex"
+    best_for: [diff_review, structured_pr_audit]
+    context_window: 200000
+    notes: "ocr's deterministic diff pipeline + Codex as the LLM. Hard line-number guarantees on review comments."
+
+  ocr-claude:
+    cost_tier: 0
+    plan: "Claude Max (via env-routed ocr backend)"
+    invoke: "ocr review --backend claude"
+    best_for: [diff_review, large_pr_audit]
+    context_window: 1000000
+    notes: "ocr pipeline + Claude when the PR is big and you want Claude's long-context summarisation alongside line comments."
+
+  # ---------- Low-level edits (preserve subscription tokens) ----------
+  pi-kimi:
+    cost_tier: 1
+    plan: "Kimi for Coding ($20/mo flat)"
+    invoke: "pi --provider kimi-coding --model k2p5"
+    best_for: [low_level_edit, bug_fix_small, scripting, formatting, refactor_small]
+    context_window: 262144
+    notes: "Fast TUI driver for routine work. Spend flat-rate budget here before touching subscriptions."
+
+  aider-kimi:
+    cost_tier: 1
+    plan: "Kimi for Coding ($20/mo flat)"
+    invoke: "aider --model openai/kimi-for-coding --openai-api-base https://api.kimi.com/coding/v1 --openai-api-key $KIMI_API_KEY"
+    best_for: [low_level_edit, git_aware_surgical_edit, rename_across_files, snippet_replacement]
+    context_window: 262144
+    notes: "Aider is best-in-class for tight repo-aware edits. SWE-bench leaderboard regular. Pair with Kimi to keep token cost ~$0."
+
+  aider-deepseek:
+    cost_tier: 2
+    plan: "PCCI per-token (encrypted)"
+    invoke: "aider --model openai/deepseek-v4-pro --openai-api-base http://127.0.0.1:3000/v1 --openai-api-key $PREM_API_KEY"
+    best_for: [low_level_edit, sensitive_input, encrypted_pipeline]
+    context_window: 128000
+    notes: "Aider routed via PCCI/DeepSeek. Use when input must not touch direct Anthropic/OpenAI but you still want Aider's editing rigour."
+
+  pcci-deepseek:
+    cost_tier: 2
+    plan: "PCCI per-token (encrypted gateway)"
+    invoke: "curl http://127.0.0.1:3000/v1/chat/completions ... model=deepseek-v4-pro"
+    best_for: [low_level_edit, research, long_analysis, sensitive_input]
+    context_window: 128000
+    notes: "Raw API. Use when you want the encryption guarantee but don't need an agent loop."
+
+  pcci-qwen36:
+    cost_tier: 2
+    plan: "PCCI per-token (encrypted gateway)"
+    invoke: "curl http://127.0.0.1:3000/v1/chat/completions ... model=qwen36-27b"
+    best_for: [trivial_classification, summarisation, bulk_processing]
+    context_window: 32000
+    notes: "Cheapest. Use for fan-out / classifier-shaped sub-tasks."
+
+  opencode-kimi:
+    cost_tier: 1
+    plan: "Kimi for Coding ($20/mo flat)"
+    invoke: "opencode --model kimi-coding/kimi-for-coding"
+    best_for: [interactive_session, exploratory_coding, multi_step_task]
+    context_window: 262144
+    notes: "TUI alt to pi for Kimi. Better for exploratory sessions with more dialog."
+
+  # ---------- Visual / UI QA ----------
+  visual-qa:
+    cost_tier: 4
+    plan: "Playwright + Stagehand + browser-use (Chromium on Hetzner)"
+    invoke: "visual-qa run <task_spec.yaml>"
+    best_for: [ui_qa, visual_regression, e2e_test, screenshot_diff, screen_recording, clerk_login, oauth_flow, broken_page_audit]
+    context_window: "n/a (vision)"
+    notes: "DOM-first via Stagehand; falls back to browser-use vision mode if selectors miss or anti-bot trips. Stores screenshots + recordings under /var/lib/visual-qa/<run-id>/."
+
+# ---------------------------------------------------------------------------
+# Supporting tools — the orchestrator + agents use these. PM should recommend
+# them in `notes` when relevant (gtr is invoked automatically per-issue by the
+# orchestrator, but flag in reasoning when an issue benefits from worktree isolation).
+# ---------------------------------------------------------------------------
+tools:
+  gtr:
+    purpose: "git worktree manager (CodeRabbit) — per-issue branch isolation"
+    install_path: /opt/gtr
+    invoke: "gtr add <issue-id> --base dev   # then cd into the worktree"
+    used_by: [orchestrator]
+    notes: "Orchestrator auto-creates a worktree per dev-pickup so multiple issues can be in flight without stepping on each other. Mention in `reasoning` if an issue absolutely needs isolation (e.g. a refactor that conflicts with current dev branch state)."
+
+  visual-qa-cli:
+    purpose: "browser-driven QA executor"
+    invoke: "visual-qa run <task_spec.yaml> --run-id <id>"
+    backend: "Playwright + Stagehand + browser-use (Claude Sonnet for vision fallback)"
+    used_by: [senior_qa, design_qa]
+    notes: "Senior QA + design agents consume this. Screenshots served at https://triage.local-pcci.org/qa/<id>/... — embeddable in Linear for phone viewing."
+
+  ocr:
+    purpose: "diff-based code review CLI"
+    invoke: "ocr review --backend codex   # or --backend claude"
+    backend: "Alibaba Open Code Review (deterministic pipeline + LLM)"
+    used_by: [code_reviewer]
+    notes: "Use for PR/diff review when line-level precision matters."
+
+  penpot:
+    purpose: "self-hosted Penpot design source of truth"
+    url: "https://penpot.local-pcci.org/"
+    mcp_endpoint: "wired via penpot-mcp container — first-party MCP server"
+    used_by: [design, ui_designer]
+    notes: "View-mode share URLs are tokenless + phone-shareable. Design agent reads design tokens via Penpot MCP, compares to live UI via visual-qa screenshots."
+
+  pcci-proxy:
+    purpose: "Prem Confidential Inference local OpenAI-compatible endpoint"
+    url: "http://127.0.0.1:3000/v1"
+    available_models: [qwen35-27b, qwen36-27b, deepseek-v4-pro]
+    used_by: [aider-deepseek, pcci-qwen36, pcci-deepseek]
+    notes: "Encrypted to enclave. Use when input must not touch Anthropic/OpenAI directly."
+
+# ---------------------------------------------------------------------------
+# Curated subagents (battle-tested persona library, audited + sanitised).
+# Live in /root/curated-agents/, symlinked into Claude / opencode / Codex.
+# PM should pick ONE subagent appropriate for the task, e.g.
+# `subagent: fastapi-pro` for a FastAPI BE feature.
+# ---------------------------------------------------------------------------
+subagents:
+  senior_dev_fe:
+    - frontend-developer        # wshobson — React 19 + Next 15, Server Actions
+    - nextjs-developer          # voltagent — App Router specialist, CWV>90 target
+    - electron-pro              # voltagent — context isolation, signed updates
+    - expo-react-native-expert  # voltagent — Expo SDK 52, EAS, New Architecture
+  junior_dev_fe:
+    - react-specialist          # voltagent — component-level scope
+  senior_dev_be:
+    - fastapi-pro               # wshobson — async SQLAlchemy 2 + Pydantic V2 + OTel
+    - typescript-pro            # wshobson — enterprise TS, generics
+    - node-specialist           # voltagent — runtime-level Node/Bun
+  junior_dev_be:
+    - python-pro                # wshobson — non-FastAPI Python
+  senior_qa:
+    - qa-expert                 # voltagent — test strategy + risk-based planning
+    - accessibility-tester      # voltagent — WCAG 2.1/2.2 audit
+  junior_qa:
+    - test-automator            # wshobson — writes Jest/Vitest/pytest/Playwright
+    - debugger                  # wshobson — reproduction + bisection
+  code_reviewer:
+    - code-reviewer             # voltagent — 8-dim review
+    - architect-reviewer        # voltagent — structural review for >5 files
+    - security-auditor          # voltagent — OWASP + authn/authz + supply chain
+  design:
+    - ui-designer               # voltagent — component-library focused
+
+# ---------------------------------------------------------------------------
+# Complexity tiers
+# ---------------------------------------------------------------------------
+complexity_tiers:
+  trivial:    {files_touched: "1",      loc_changed: "< 30",       design_required: false,  typical_time_min: 5}
+  small:      {files_touched: "1-3",    loc_changed: "30-150",     design_required: false,  typical_time_min: 15}
+  medium:     {files_touched: "3-10",   loc_changed: "150-500",    design_required: "some", typical_time_min: 45}
+  complex:    {files_touched: "5-20",   loc_changed: "200-1500",   design_required: true,   typical_time_min: 120}
+  research:   {files_touched: "0-3",    loc_changed: "negotiable", design_required: true,   typical_time_min: 180}
+
+task_types:
+  - bug_fix
+  - feature_work
+  - refactor
+  - architecture
+  - code_review
+  - research
+  - docs
+  - infra
+  - scripting
+  - investigation
+  - planning
+  - ui_qa             # NEW
+  - oauth_flow_test   # NEW — Clerk, Google, etc.
+  - screenshot_audit  # NEW
+  - misc
+
+# ---------------------------------------------------------------------------
+# Default routing — PM agent overrides as needed. Cost-tier ordering matters.
+# ---------------------------------------------------------------------------
+default_routing:
+  # UI / visual / OAuth flows → visual-qa
+  - {complexity: "*",      type: ui_qa,            harness: visual-qa}
+  - {complexity: "*",      type: oauth_flow_test,  harness: visual-qa}
+  - {complexity: "*",      type: screenshot_audit, harness: visual-qa}
+
+  # Code review → Codex specialist (small scope, deep)
+  - {complexity: trivial,  type: code_review,      harness: ocr-codex}
+  - {complexity: small,    type: code_review,      harness: ocr-codex}
+  - {complexity: medium,   type: code_review,      harness: codex-gpt5}
+  - {complexity: complex,  type: code_review,      harness: ocr-claude}
+
+  # Trivial → cheapest
+  - {complexity: trivial,  type: "*",              harness: pcci-qwen36}
+
+  # Small low-level work → flat-rate Kimi via Aider/pi
+  - {complexity: small,    type: bug_fix,          harness: aider-kimi}
+  - {complexity: small,    type: refactor,         harness: aider-kimi}
+  - {complexity: small,    type: scripting,        harness: pi-kimi}
+  - {complexity: small,    type: feature_work,     harness: aider-kimi}
+  - {complexity: small,    type: docs,             harness: claude-sonnet}
+
+  # Medium → Claude (orchestration + multi-file)
+  - {complexity: medium,   type: bug_fix,          harness: claude-sonnet}
+  - {complexity: medium,   type: feature_work,     harness: claude-sonnet}
+  - {complexity: medium,   type: refactor,         harness: claude-sonnet}
+  - {complexity: medium,   type: docs,             harness: claude-sonnet}
+  - {complexity: medium,   type: infra,            harness: claude-sonnet}
+
+  # Complex → Opus thinking
+  - {complexity: complex,  type: architecture,     harness: claude-opus-thinking}
+  - {complexity: complex,  type: refactor,         harness: claude-opus-thinking}
+  - {complexity: complex,  type: bug_fix,          harness: claude-opus-thinking}
+  - {complexity: complex,  type: feature_work,     harness: claude-opus-thinking}
+
+  # Research / planning
+  - {complexity: research, type: research,         harness: claude-opus-thinking}
+  - {complexity: research, type: planning,         harness: claude-opus-thinking}
+
+  # Investigation default
+  - {complexity: "*",      type: investigation,    harness: claude-sonnet}

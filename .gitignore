@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+*.db
+*.bak*
+.env
+*.credentials
+.cache/
+node_modules/
+/etc/triage/env
